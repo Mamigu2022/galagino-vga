@@ -1,6 +1,6 @@
 #ifndef VIDEO_H
 #define VIDEO_H
-
+#ifndef VIDEO_BACKEND_VGA32
 #include <Arduino.h>
 #include <driver/spi_master.h>
 #include "../config.h"
@@ -28,3 +28,4 @@ private:
 };
 
 #endif // VIDEO_H
+#endif

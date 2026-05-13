@@ -5,6 +5,7 @@
 #include "../machines/machineBase.h"
 #include "../machines/dkong/dkong.h"
 #include "../machines/galaga/galaga.h"
+#include "../machines/spaceinvaders/spaceinvaders_samples.h"
 #include "../config.h"
 
 #if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(4, 4, 4)
@@ -29,6 +30,7 @@
 class Audio {
 public:
   void init();
+  void mute(bool enable);
   void start(machineBase *machineBase);
   void transmit();
   void volumeUpDown(bool up, bool down);
@@ -38,6 +40,8 @@ private:
   void ay_render_buffer(void);
   void sn76489_render_buffer(void);
   void i8048_render_buffer(void);
+  void galaxian_render_buffer(void);
+  void spaceinvaders_render_buffer(void);
   void valueToBuffer(int index, short value);
   void discrete_render_buffer(void);
   void generateSinusWave(int32_t amplitude, short* buffer, uint16_t length);
@@ -76,6 +80,37 @@ private:
   // MrDo!
   int sn_counter[2][4] = {{0, 0, 0, 0}, {0, 0, 0, 0}};
   int sn_toggle[2][4] = {{1, 1, 1, 1}, {1, 1, 1, 1}};
+
+  // Galaxian state
+  unsigned long gal_tone_cnt = 0;
+  signed char gal_tone_toggle = 1;
+  unsigned long gal_fs_cnt[3] = {0, 0, 0};
+  signed char gal_fs_toggle[3] = {1, 1, 1};
+  unsigned long gal_noise_cnt = 0;
+  unsigned int gal_noise_rng = 1;
+  unsigned long gal_fire_rng = 0x1234; 
+  int gal_fire_cnt = 0;               
+  float gal_lfo_pos[3];
+  float gal_vco_pos;
+  float gal_noise_pos;
+
+  // Space Invaders state
+  unsigned long si_noise_rng = 0x1FFFF; 
+  int si_noise_clock = 0;              
+  int si_noise_out = 0;                
+  unsigned long si_ufo_sweep = 0;      
+  unsigned long si_ufo_cnt = 0;        
+  int si_ufo_toggle = 1;              
+  unsigned long si_explo_cnt = 0;      
+  int si_explo_env = 0;               
+  unsigned long si_fleet_cnt = 0;      
+  int si_fleet_toggle = 1;            
+  unsigned long si_ufohit_cnt = 0;     
+  int si_ufohit_toggle = 1;           
+  int si_ufohit_freq = 0;             
+  unsigned long si_ufohit_warble = 0;  
+  unsigned long si_sample_ptr[9];
+  unsigned char si_last_port3, si_last_port5;
 
   // Labdybug
   uint32_t noise_lfsr[2] = {0x4000, 0x4000};

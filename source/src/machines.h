@@ -5,8 +5,8 @@
 #define ENABLE_PACMAN
 #define ENABLE_GALAGA
 #define ENABLE_DKONG
-#define ENABLE_FROGGER
-#define ENABLE_DIGDUG
+//#define ENABLE_FROGGER
+//#define ENABLE_DIGDUG
 #define ENABLE_1942
 #define ENABLE_EYES
 #define ENABLE_MRTNT
@@ -15,14 +15,18 @@
 #define ENABLE_CRUSH
 #define ENABLE_ANTEATER
 #define ENABLE_BOMBJACK
-#define ENABLE_MRDO
+//#define ENABLE_MRDO
 #define ENABLE_BAGMAN
-#define ENABLE_PENGO
+//#define ENABLE_PENGO
 #define ENABLE_GYRUSS
-#define ENABLE_LADYBUG
-#define ENABLE_DKONGJR
 #define ENABLE_MSPACMAN
-#define ENABLE_TIMEPLT
+#define ENABLE_GALAXIAN
+#define ENABLE_SPACE
+// #define ENABLE_TIMEPLT //Little buggy so commented out.
+//#define ENABLE_TUTANKHM
+//#define ENABLE_LADYBUG
+//#define ENABLE_DKONGJR
+
 
 #ifdef ENABLE_PACMAN  
   #include "machines/pacman/pacman.h"
@@ -92,20 +96,32 @@
   #include "machines/gyruss/gyruss.h"
 #endif
 
-#ifdef ENABLE_LADYBUG  
+#ifdef ENABLE_MSPACMAN
+  #include "machines/mspacman/mspacman.h"
+#endif
+
+#ifdef ENABLE_GALAXIAN
+  #include "machines/galaxian/galaxian.h"
+#endif
+
+#ifdef ENABLE_SPACE
+  #include "machines/spaceinvaders/spaceinvaders.h"
+#endif
+
+#ifdef ENABLE_TIMEPLT
+  #include "machines/timeplt/timeplt.h"
+#endif
+
+#ifdef ENABLE_TUTANKHM
+  #include "machines/tutankhm/tutankhm.h"
+#endif
+
+#ifdef ENABLE_LADYBUG
   #include "machines/ladybug/ladybug.h"
 #endif
 
 #ifdef ENABLE_DKONGJR
   #include "machines/dkongjr/dkongjr.h"
-#endif
-
-#ifdef ENABLE_MSPACMAN  
-  #include "machines/mspacman/mspacman.h"
-#endif
-
-#ifdef ENABLE_TIMEPLT 
-  #include "machines/timeplt/timeplt.h"
 #endif
 
 // change machine order is possible here...
@@ -161,17 +177,26 @@ machineBase *machines[] = {
 #ifdef ENABLE_GYRUSS 
   new gyruss(),
 #endif
-#ifdef ENABLE_LADYBUG  
-  new ladybug(),
+#ifdef ENABLE_MSPACMAN
+  new mspacman(),
+#endif
+#ifdef ENABLE_GALAXIAN
+  new galaxian(),
+#endif
+#ifdef ENABLE_SPACE
+  new spaceinvaders(),
+#endif
+#ifdef ENABLE_TIMEPLT
+  new timeplt(),
+#endif
+#ifdef ENABLE_TUTANKHM
+  new tutankhm(),
 #endif
 #ifdef ENABLE_DKONGJR  
   new dkongjr(),
 #endif
-#ifdef ENABLE_MSPACMAN  
-  new mspacman(),
-#endif
-#ifdef ENABLE_TIMEPLT 
-  new timeplt()
+#ifdef ENABLE_LADYBUG
+  new ladybug()
 #endif
 };
 

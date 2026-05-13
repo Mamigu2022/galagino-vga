@@ -1,0 +1,114 @@
+#ifdef VIDEO_BACKEND_VGA32
+
+#include "vga_driver.h"
+#include <Arduino.h>
+#include <FabGL.h>
+
+fabgl::VGAController* VGACtrl   = nullptr;
+fabgl::Canvas*        VGACanvas = nullptr;
+
+static bool _frame_active = false;
+static int  _vga_w        = 0;
+static int  _vga_h        = 0;
+static int  _margin_x     = 0;
+static int  _margin_y     = 0;
+static int  _draw_col_min = 0;
+static int  _draw_col_max = 0;
+static int  _draw_row_min = 0;
+static int  _draw_row_max = 0;
+
+// Buffer de columna estático
+static fabgl::RGB222 s_col_buf[GAME_WIDTH];
+
+static inline fabgl::RGB222 rgb565_to_rgb222(uint16_t p) {
+  // swap bytes
+  p = (p >> 8) | (p << 8);
+  fabgl::RGB222 c;
+  c.R = ((p >> 11) & 0x1F) >> 3;
+  c.G = ((p >>  5) & 0x3F) >> 4;
+  c.B = ( p        & 0x1F) >> 3;
+  return c;
+}
+
+void tft_init(void) {
+  Serial.println("[VGA32] Iniciando...");
+
+  VGACtrl = new fabgl::VGAController();
+  if (!VGACtrl) { Serial.println("[VGA32] ERROR"); while(1); }
+
+  VGACtrl->begin(
+    GPIO_NUM_22, GPIO_NUM_21,
+    GPIO_NUM_19, GPIO_NUM_18,
+    GPIO_NUM_5,  GPIO_NUM_4,
+    GPIO_NUM_23, GPIO_NUM_15
+  );
+  VGACtrl->setResolution(VGA_RESOLUTION);
+
+  _vga_w = VGACtrl->getScreenWidth();
+  _vga_h = VGACtrl->getScreenHeight();
+  _margin_x = (_vga_w - GAME_HEIGHT) / 2;
+  _margin_y = (_vga_h - GAME_WIDTH)  / 2;
+  _draw_col_min = max(0, -_margin_x);
+  _draw_col_max = min(GAME_HEIGHT, _vga_w - _margin_x) - 1;
+  _draw_row_min = max(0, -_margin_y);
+  _draw_row_max = min(GAME_WIDTH,  _vga_h - _margin_y) - 1;
+
+  Serial.printf("[VGA32] %dx%d  mx=%d my=%d\n", _vga_w, _vga_h, _margin_x, _margin_y);
+
+  VGACanvas = new fabgl::Canvas(VGACtrl);
+  if (!VGACanvas) { Serial.println("[VGA32] ERROR Canvas"); while(1); }
+
+  VGACanvas->setBrushColor(fabgl::Color::Black);
+  VGACanvas->clear();
+  VGACanvas->waitCompletion();
+  VGACanvas->setBrushColor(fabgl::Color::BrightRed);
+  VGACanvas->fillRectangle(_vga_w/4, _vga_h/4, _vga_w*3/4, _vga_h*3/4);
+  VGACanvas->waitCompletion();
+  delay(1000);
+  VGACanvas->setBrushColor(fabgl::Color::Black);
+  VGACanvas->clear();
+  VGACanvas->waitCompletion();
+  Serial.println("[VGA32] Listo.");
+}
+
+void tft_start_frame(void) { _frame_active = true; }
+
+void tft_write_pixels(int x_start, int y_game,
+                      const uint16_t* pixels, int count) {
+  if (!_frame_active || !VGACtrl) return;
+  if (y_game < _draw_col_min || y_game > _draw_col_max) return;
+
+  int screen_x = _margin_x + y_game;
+
+  // Calcular rango de filas VGA visibles
+  int y_top    = _margin_y + (GAME_WIDTH - 1 - (x_start + count - 1));
+  int y_bottom = _margin_y + (GAME_WIDTH - 1 - x_start);
+  int y_t = max(0, max(y_top,    _margin_y + _draw_row_min));
+  int y_b = min(_vga_h - 1, min(y_bottom, _margin_y + _draw_row_max));
+  if (y_t > y_b) return;
+
+  int buf_len = y_b - y_t + 1;
+  for (int i = 0; i < buf_len; i++) {
+    int game_x = x_start + (GAME_WIDTH - 1 - (y_t + i - _margin_y));
+    s_col_buf[i] = (game_x >= 0 && game_x < count)
+                   ? rgb565_to_rgb222(pixels[game_x])
+                   : fabgl::RGB222{0, 0, 0};
+  }
+
+  fabgl::Rect rect(screen_x, y_t, screen_x, y_b);
+  VGACtrl->writeScreen(rect, s_col_buf);
+}
+
+void tft_end_frame(void) { _frame_active = false; }
+
+void tft_fill_rect(int x, int y, int w, int h, uint16_t color565) {
+  if (!VGACanvas) return;
+  uint8_t r = ((color565 >> 11) & 0x1F) << 3;
+  uint8_t g = ((color565 >>  5) & 0x3F) << 2;
+  uint8_t b =  (color565        & 0x1F) << 3;
+  VGACanvas->setBrushColor(fabgl::RGB888(r, g, b));
+  VGACanvas->fillRectangle(x, y, x + w - 1, y + h - 1);
+  VGACanvas->waitCompletion();
+}
+
+#endif // VIDEO_BACKEND_VGA32

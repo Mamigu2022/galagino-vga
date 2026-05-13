@@ -1,5 +1,5 @@
 #include "video.h"
-
+#ifndef VIDEO_BACKEND_VGA32
 static spi_device_interface_config_t if_cfg {
   .command_bits = 0,
   .address_bits = 0,
@@ -290,3 +290,4 @@ void Video::write8(uint8_t data) {
   transaction.tx_data[0] = data;
   spi_device_transmit(handle, &transaction);
 }
+#endif

@@ -1,5 +1,6 @@
 #include "Arduino.h"
 #include "emulation.h"
+#include "input.h"
 #include "../machines/machineBase.h"
 
 extern machineBase *currentMachine;
@@ -8,7 +9,7 @@ volatile static char doDeleteEmulationTask;
 
 void emulation_start() {
   currentMachine->reset();
-  xTaskCreatePinnedToCore(emulation_task, "emulation task", 4096, NULL, 2, &emulationTaskHandle, ARDUINO_RUNNING_CORE == 0 ? 1 : 0);
+  xTaskCreatePinnedToCore(emulation_task, "emulation task", 4096, NULL, 2, &emulationTaskHandle, 1);
 }
 
 void emulation_stop() {

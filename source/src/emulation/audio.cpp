@@ -38,6 +38,20 @@ void Audio::init() {
   generateSinusWave(256, sinusWaveBuffer, sizeof(sinusWaveBuffer)  / 2 );
 }
 
+void Audio::mute(bool enable) {
+  if (enable) {
+    i2s_set_dac_mode(I2S_DAC_CHANNEL_DISABLE);
+  } else {
+#ifdef SND_DIFF
+    i2s_set_dac_mode(I2S_DAC_CHANNEL_BOTH_EN);
+#elif defined(SND_LEFT_CHANNEL)
+    i2s_set_dac_mode(I2S_DAC_CHANNEL_LEFT_EN);
+#else
+    i2s_set_dac_mode(I2S_DAC_CHANNEL_RIGHT_EN);
+#endif
+  }
+}
+
 void Audio::start(machineBase *machineBase) {
   currentMachine = machineBase;
   machineType = currentMachine->machineType();
@@ -52,6 +66,21 @@ void Audio::start(machineBase *machineBase) {
   // The effective sample rate thus is 6M/15/34 = 11764.7 Hz
   i2s_set_sample_rates(I2S_NUM_0, machineType == MCH_DKONG ? 11765 : 24000);
 #endif
+
+  // Reset custom sound state pointers
+  if (machineType == MCH_SPACE) {
+    for(int i=0; i<9; i++) si_sample_ptr[i] = 0xFFFFFFFF;
+    si_last_port3 = 0; si_last_port5 = 0;
+    si_explo_env = 0; si_ufohit_freq = 0;
+  }
+  if (machineType == MCH_GALAXIAN) {
+    for(int i=0; i<3; i++) gal_lfo_pos[i] = 0;
+    gal_vco_pos = 0; gal_noise_pos = 0; gal_noise_rng = 1; gal_tone_cnt = 0;
+  }
+  if (machineType == MCH_LADYBUG) {
+    noise_lfsr[0] = 0x4000;
+    noise_lfsr[1] = 0x4000;
+  }
 }
 
 void Audio::volumeUpDown(bool up, bool down) {
@@ -79,14 +108,19 @@ void Audio::transmit() {
 
     // render the next audio chunk if data has actually been sent
     if(bytesOut) {      
-      if (currentMachine->hasNamcoAudio())
+      if (currentMachine->hasNamcoAudio()) {
         namco_render_buffer();
+      }
       else if(machineType == MCH_MRDO || machineType == MCH_LADYBUG)
         sn76489_render_buffer();
       else if(machineType == MCH_BAGMAN)
         discrete_render_buffer();
-     else if(machineType == MCH_DKONG || machineType == MCH_DKONGJR)
+      else if(machineType == MCH_DKONG || machineType == MCH_DKONGJR)
 	      i8048_render_buffer();
+      else if(machineType == MCH_GALAXIAN)
+        galaxian_render_buffer();
+      else if(machineType == MCH_SPACE)
+        spaceinvaders_render_buffer();
       else
         ay_render_buffer();
     }
@@ -94,17 +128,13 @@ void Audio::transmit() {
 }
 
 void Audio::ay_render_buffer(void) {
-  char AY = 2; 
-  char AY_INC = 8;
-  char AY_VOL = 5;
+  char AY = (machineType == MCH_FROGGER) ? 1 : 2;       // frogger has one AY / 1942 has two AYs
+  char AY_INC = (machineType == MCH_FROGGER || machineType == MCH_ANTEATER || machineType == MCH_TIMEPLT || machineType == MCH_TUTANKHM) ? 9 : 8;   // froggger runs at 1.78 MHz -> 223718/24000 = 9,32 / 1942 runs at 1.5 MHz -> 187500/24000 = 7,81
+  char AY_VOL = (machineType == MCH_FROGGER || machineType == MCH_TIMEPLT || machineType == MCH_TUTANKHM) ? 11 : 5;  // frogger min/max = -/+ 3*15*11 = -/+ 495 / 1942 min/max = -/+ 6*15*11 = -/+ 990
+  if (machineType == MCH_BOMBJACK) { AY = 3; AY_INC = 8; AY_VOL = 10; }
+  if (machineType == MCH_GYRUSS) { AY = 5; AY_INC = 9; AY_VOL = 3; }
 
-  if (machineType == MCH_FROGGER) { AY = 1; AY_INC = 9; AY_VOL = 11; }
-  else if (machineType == MCH_ANTEATER) { AY = 2; AY_INC = 9; AY_VOL = 5; }
-  else if (machineType == MCH_BOMBJACK) { AY = 3; AY_INC = 8; AY_VOL = 10; }
-  else if (machineType == MCH_GYRUSS) { AY = 5; AY_INC = 9; AY_VOL = 3; }
-  else if (machineType == MCH_TIMEPLT) { AY = 2; AY_INC = 9; AY_VOL = 5; }
- 
-  // up to three AY's
+  // up to five AY's
   for(char ay = 0; ay < AY; ay++) {
     int ay_off = 16 * ay;
 
@@ -138,7 +168,7 @@ void Audio::ay_render_buffer(void) {
   for(int i = 0; i < 64; i++) {
     short value = 0; // silence
 
-    if(machineType == MCH_FROGGER || machineType == MCH_1942 || machineType == MCH_ANTEATER || machineType == MCH_GYRUSS || machineType == MCH_TIMEPLT) {    
+    if(machineType == MCH_FROGGER || machineType == MCH_1942 || machineType == MCH_ANTEATER || machineType == MCH_GYRUSS || machineType == MCH_TIMEPLT || machineType == MCH_TUTANKHM) {    
       for(char ay = 0; ay < AY; ay++) {
         // frogger can acually skip the noise generator as
         // it doesn't use it      
@@ -277,7 +307,7 @@ void Audio::i8048_render_buffer(void) {
           dkongMachine->dkong_sample_cnt[j]--;
         }
 #else
-        value += *dkongMachine->dkong_sample_ptr[j]++; 
+        value += *dkongMachine->dkong_sample_ptr[j]++;  
         dkongMachine->dkong_sample_cnt[j]--;
 #endif
       }
@@ -291,12 +321,174 @@ void Audio::i8048_render_buffer(void) {
       dkongMachine->dkong_obuf_toggle = !dkongMachine->dkong_obuf_toggle;
     }
 #endif
+
     value = value << 1;
     if (value > 384)
       value = 384;
     else if (value < -384)
       value = -384;
+
+
+    valueToBuffer(i, value);
+  }
+}
+
+void Audio::spaceinvaders_render_buffer(void) {
+  uint8_t port3 = currentMachine->soundregs[0];
+  uint8_t port5 = currentMachine->soundregs[1];
+
+  for (int i = 0; i < 64; i++) {
+    int value = 0;
+
+    // Shot sample (Port 3, bit 1)
+    if (si_sample_ptr[1] < si_sample_shot_LEN) {
+      value += (pgm_read_byte(&si_sample_shot[si_sample_ptr[1]++]) * 3);
+    }
+    // Invader Hit sample (Port 3, bit 3)
+    if (si_sample_ptr[3] < si_sample_invhit_LEN) {
+      value += (pgm_read_byte(&si_sample_invhit[si_sample_ptr[3]++]) * 3);
+    }
+
+    // 1. Fleet movement (Port 5, bits 0-3)
+    if (port5 & 0x0F) {
+      int freq = 0;
+      if (port5 & 0x01) freq = 110;
+      else if (port5 & 0x02) freq = 80;
+      else if (port5 & 0x04) freq = 74;
+      else if (port5 & 0x08) freq = 66;
+
+      if (freq) {
+        int inc = (freq * 65536) / 24000;
+        si_fleet_cnt += inc;
+        if (si_fleet_cnt >= 32768) {
+          si_fleet_cnt -= 32768;
+          si_fleet_toggle = -si_fleet_toggle;
+        }
+        value += si_fleet_toggle * 40; 
+      }
+    }
+
+    // 2. Player Explosion (Port 3, bit 2)
+    if (si_explo_env > 0) {
+      si_noise_clock += (7515 * 65536) / 24000;
+      while (si_noise_clock >= 65536) {
+        si_noise_clock -= 65536;
+        int bit = ((si_noise_rng >> 4) ^ (si_noise_rng >> 16)) & 1;
+        si_noise_rng = (si_noise_rng << 1) | bit;
+        si_noise_out = (si_noise_rng >> 12) & 1;
+      }
+      value += (si_noise_out ? si_explo_env : -si_explo_env);
       
+      si_explo_cnt++;
+      if (si_explo_cnt > 200) { 
+        si_explo_cnt = 0;
+        si_explo_env--;
+      }
+    }
+
+    // 3. UFO Hit (Port 5, bit 4)
+    if (si_ufohit_freq > 0) {
+      int inc = (si_ufohit_freq * 65536) / 24000;
+      si_ufohit_cnt += inc;
+      if (si_ufohit_cnt >= 32768) {
+        si_ufohit_cnt -= 32768;
+        si_ufohit_toggle = -si_ufohit_toggle;
+      }
+      value += si_ufohit_toggle * 40;
+      
+      si_ufohit_warble++;
+      if (si_ufohit_warble > 60) {
+        si_ufohit_warble = 0;
+        si_ufohit_freq -= 10;
+        if (si_ufohit_freq < 100) si_ufohit_freq = 0;
+      }
+    }
+
+    // 4. Extended Play (Port 3, bit 4)
+    if (port3 & 0x10) {
+       int inc = (1000 * 65536) / 24000;
+       si_ufo_cnt += inc; 
+       if (si_ufo_cnt >= 32768) {
+         si_ufo_cnt -= 32768;
+         si_ufo_toggle = -si_ufo_toggle;
+       }
+       value += si_ufo_toggle * 30;
+    }
+
+    // 5. UFO fly (Port 3, bit 0)
+    if (port3 & 0x01) {
+       si_ufo_sweep = (si_ufo_sweep + 1) % 4527; 
+       int freq = 1220 + ((si_ufo_sweep < 2263) ? si_ufo_sweep : (4527 - si_ufo_sweep));
+       int inc = (freq * 65536) / 24000;
+       si_ufo_cnt += inc;
+       if (si_ufo_cnt >= 32768) {
+         si_ufo_cnt -= 32768;
+         si_ufo_toggle = -si_ufo_toggle;
+       }
+       value += si_ufo_toggle * 20;
+    }
+
+    if (i == 0) {
+      if ((port3 & 0x02) && !(si_last_port3 & 0x02)) si_sample_ptr[1] = 0; // Shot
+      if ((port3 & 0x08) && !(si_last_port3 & 0x08)) si_sample_ptr[3] = 0; // Invader hit
+      if ((port3 & 0x04) && !(si_last_port3 & 0x04)) { // Player hit
+         si_explo_env = 80;
+         si_explo_cnt = 0;
+      }
+      if ((port5 & 0x10) && !(si_last_port5 & 0x10)) { // UFO hit
+         si_ufohit_freq = 3000;
+         si_ufohit_warble = 0;
+      }
+      si_last_port3 = port3;
+      si_last_port5 = port5;
+    }
+    valueToBuffer(i, value);
+  }
+}
+
+void Audio::galaxian_render_buffer(void) {
+  for (int i = 0; i < 64; i++) {
+    int value = 0;
+    if (currentMachine->soundregs[0]) {
+      gal_vco_pos += (float)currentMachine->soundregs[0] / 100.0f;
+      if (gal_vco_pos > 2.0f * PI) gal_vco_pos -= 2.0f * PI;
+      value += (int)(sin(gal_vco_pos) * 20.0f);
+    }
+    if (currentMachine->soundregs[8]) {
+      gal_fs_cnt[0] += (160 * 65536) / 24000;
+      if (gal_fs_cnt[0] >= 32768) { gal_fs_cnt[0] -= 32768; gal_fs_toggle[0] = -gal_fs_toggle[0]; }
+      value += gal_fs_toggle[0] * 20;
+    }
+    if (currentMachine->soundregs[9]) {
+      gal_fs_cnt[1] += (230 * 65536) / 24000;
+      if (gal_fs_cnt[1] >= 32768) { gal_fs_cnt[1] -= 32768; gal_fs_toggle[1] = -gal_fs_toggle[1]; }
+      value += gal_fs_toggle[1] * 20;
+    }
+    if (currentMachine->soundregs[10]) {
+      gal_fs_cnt[2] += (330 * 65536) / 24000;
+      if (gal_fs_cnt[2] >= 32768) { gal_fs_cnt[2] -= 32768; gal_fs_toggle[2] = -gal_fs_toggle[2]; }
+      value += gal_fs_toggle[2] * 20;
+    }
+    if (currentMachine->soundregs[13]) {
+      gal_fire_cnt += 1;
+      int freq = 1200 - (gal_fire_cnt / 4); 
+      if (freq < 100) freq = 100;
+      gal_tone_cnt += (freq * 65536) / 24000;
+      if (gal_tone_cnt >= 32768) { gal_tone_cnt -= 32768; gal_tone_toggle = -gal_tone_toggle; }
+      gal_fire_rng = (gal_fire_rng >> 1) ^ (-(gal_fire_rng & 1u) & 0x8000000bu);
+      value += (gal_tone_toggle * 15) + ((gal_fire_rng & 1) ? 15 : -15);
+    } else {
+      gal_fire_cnt = 0;
+    }
+    if (currentMachine->soundregs[11]) {
+      gal_noise_cnt += 1;
+      gal_noise_rng = (gal_noise_rng >> 1) ^ (-(gal_noise_rng & 1u) & 0x8000000bu);
+      int vol = 40 - (gal_noise_cnt / 1000); 
+      if (vol < 0) vol = 0;
+      value += (gal_noise_rng & 1) ? vol : -vol;
+    } else {
+      gal_noise_cnt = 0;
+    }
     valueToBuffer(i, value);
   }
 }
@@ -313,23 +505,23 @@ void Audio::sn76489_render_buffer(void) {
         currentMachine->sn_hold[chip][c]--;
         if (currentMachine->sn_hold[chip][c] == 0)
           currentMachine->sn_min_volume[chip][c] = currentMachine->sn_volume[chip][c];
-        } 
-        else {
-          vol[chip][c] = currentMachine->sn_volume[chip][c];
-          currentMachine->sn_min_volume[chip][c] = currentMachine->sn_volume[chip][c];
-        }
+      } 
+      else {
+        vol[chip][c] = currentMachine->sn_volume[chip][c];
+        currentMachine->sn_min_volume[chip][c] = currentMachine->sn_volume[chip][c];
       }
     }
+  }
 
-    for (int i = 0; i < 64; i++) {
-      short sample = 0;
+  for (int i = 0; i < 64; i++) {
+    short sample = 0;
 
-      for (int chip = 0; chip < 2; chip++) {
-        for (int c = 0; c < 4; c++) {
-          int period = currentMachine->sn_period[chip][c];
+    for (int chip = 0; chip < 2; chip++) {
+      for (int c = 0; c < 4; c++) {
+        int period = currentMachine->sn_period[chip][c];
 
-          if (vol[chip][c] < 15 && period > 0) {
-            sn_counter[chip][c] -= sn_inc;
+        if (vol[chip][c] < 15 && period > 0) {
+          sn_counter[chip][c] -= sn_inc;
 
           while (sn_counter[chip][c] <= 0) {
             if (c == 3) {  // Noise channel
@@ -445,8 +637,8 @@ void Audio::valueToBuffer(int index, short value) {
 
 #ifdef SND_DIFF
     // generate differential output
-    snd_buffer[2 * index]   = 0x8000 + (volume / volumeSetting);    // positive signal on GPIO26
-    snd_buffer[2 * index + 1] = 0x8000 - (volume / volumeSetting);    // negatve signal on GPIO25 
+    snd_buffer[2 * index]   = 0x8000 + (value / volumeSetting);    // positive signal on GPIO26
+    snd_buffer[2 * index + 1] = 0x8000 - (value / volumeSetting);    // negatve signal on GPIO25 
 #else
     // work-around weird byte order bug, see 
     // https://github.com/espressif/arduino-esp32/issues/8467#issuecomment-1656616015

@@ -1,20 +1,12 @@
 /*
  * Galagino - Galaga arcade for ESP32 and Platformio
- *
- * (c) 2025 speckhoiler
- *
- * This is a port of Till Harbaum's awesome Galaga emulator
- * https://github.com/harbaum/galagino
- *
- * Published under GPLv3
- *
+ * VGA32 port — basado en DynaMight1124/galagino
  */
 #include <Arduino.h>
 #include "config.h"
 #include "machines.h"
 #include "machines/machineBase.h"
 #include "emulation/audio.h"
-#include "emulation/video.h"
 #include "emulation/input.h"
 #include "emulation/menu.h"
 #include "emulation/emulation.h"
@@ -22,26 +14,50 @@
   #include "emulation/led.h"
 #endif
 
-signed char machinesCount = (signed char)(sizeof(machines) / sizeof(unsigned short*));
+// ── Backend de vídeo ─────────────────────────────────────────
+#ifdef VIDEO_BACKEND_VGA32
+  #include "emulation/vga_driver.h"
+  // La clase Video se define en video_vga32.h (stub compatible)
+  #include "emulation/video_vga32.h"
+  #include "emulation/ps2_input.h"
+#else
+  #include "emulation/video.h"
+#endif
 
+// Stack aumentado para compatibilidad con FabGL
+SET_LOOP_TASK_STACK_SIZE(16384);
+
+signed char machinesCount = (signed char)(sizeof(machines) / sizeof(machines[0]));
 machineBase *currentMachine;
-
-// the hardware supports 64 sprites
 struct sprite_S *sprite_buffer;
-
-// buffer space for one row of 28 characters
 unsigned short *frame_buffer;
-
-// RAM
 unsigned char *memory;
 
 Audio audio = Audio();
 Video video = Video();
 Input input = Input();
-Menu menu = Menu();
+Menu  menu  = Menu();
 #ifdef LED_PIN
   Led led = Led();
 #endif
+
+// ── Variables y tareas VGA32 ─────────────────────────────────
+/*volatile bool emulation_ready = false;
+
+#ifdef VIDEO_BACKEND_VGA32
+TaskHandle_t audiotask = nullptr;
+
+void audio_task(void *p) {
+  Serial.println("[AUDIO] Esperando emulacion...");
+  while(!emulation_ready) vTaskDelay(10);
+  Serial.println("[AUDIO] Iniciando tarea de audio");
+  TickType_t last = xTaskGetTickCount();
+  while(1) {
+    audio.transmit();
+    vTaskDelayUntil(&last, pdMS_TO_TICKS(3));
+  }
+}
+#endif*/
 
 void updateAudioVideo(void);
 void renderRow(short row, bool isMenu);
@@ -52,32 +68,48 @@ bool doReset = false;
 
 void setup() {
   Serial.begin(115200);
-  Serial.println("Galagino"); 
+  Serial.println("Galagino VGA32");
 
-  Serial.print("ESP-IDF "); 
-  Serial.println(ESP_IDF_VERSION, HEX); 
+  Serial.print("ESP-IDF "); Serial.println(ESP_IDF_VERSION, HEX);
 
 #ifdef WORKAROUND_I2S_APLL_PROBLEM
-  Serial.println("I2S APLL workaround active"); 
+  Serial.println("I2S APLL workaround active");
 #endif
-  // this should not be needed as the CPU runs by default on 240Mht nowadays
+
   setCpuFrequencyMhz(240);
+  Serial.printf("CPU: %d MHz\n", getCpuFrequencyMhz());
+  Serial.printf("PSRAM: %d bytes\n", ESP.getPsramSize());
+  Serial.printf("Free heap: %d\n", ESP.getFreeHeap());
 
-  Serial.print("Free heap: "); Serial.println(ESP.getFreeHeap());
-  Serial.print("Main core: "); Serial.println(xPortGetCoreID());
-  Serial.print("Main priority: "); Serial.println(uxTaskPriorityGet(NULL));  
-
-  // allocate memory for a single tile/character row
-  frame_buffer = (unsigned short*)malloc(224 * 8 * 2);
+  // Allocate buffers
+  frame_buffer  = (unsigned short*)malloc(224 * 8 * 2);
   sprite_buffer = (sprite_S*)malloc(128 * sizeof(sprite_S));
-  memory = (uint8_t *)malloc(RAMSIZE);
+  memory        = (uint8_t*)malloc(RAMSIZE);
+
+  if (!frame_buffer || !sprite_buffer || !memory) {
+    Serial.println("ERROR: malloc falló");
+    while(1) delay(100);
+  }
+  Serial.printf("frame_buffer @ %p\n", frame_buffer);
+
   currentMachine = machines[0];
-  
   for (int i = 0; i < machinesCount; i++)
     machines[i]->init(&input, frame_buffer, sprite_buffer, memory);
 
+  // ── Inicializar vídeo PRIMERO ────────────────────────────
+  video.begin();  // llama a tft_init() en VGA32
+
+  // ── Audio ────────────────────────────────────────────────
   audio.init();
   audio.start(currentMachine);
+
+#ifdef VIDEO_BACKEND_VGA32
+  
+  ps2_input_init();
+  // Tarea de audio dedicada (evita conflicto timing con vídeo)
+  //emulation_ready = true;
+  //xTaskCreatePinnedToCore(audio_task, "audio", 4096, NULL, 2, &audiotask, 1);
+#endif
 
   input.init(machinesCount == 1);
   input.onVolumeUpDown(onVolumeUpDown);
@@ -85,17 +117,27 @@ void setup() {
   input.onDoAttractReset(onDoAttractReset);
 
   menu.init(&input, machines, machinesCount, frame_buffer);
+
 #ifdef LED_PIN
   led.init();
 #endif
 
-  video.begin();
-  Serial.print("Free heap: "); Serial.println(ESP.getFreeHeap());
+  // Delay inicial para evitar race condition con emulación
+  // (se reemplaza por emulation_ready en emulation_start)
+  delay(500);
+
+  Serial.printf("Free heap final: %d\n", ESP.getFreeHeap());
 }
 
-void loop(void) {  
-  // run video in main task. This will send signals to the emulation task in the background to synchronize video
-  updateAudioVideo(); 
+void loop(void) {
+  // Esperar a que la emulación esté lista
+  //static bool waited = false;
+  /*if (!waited) {
+    while(!emulation_ready) vTaskDelay(10);
+    waited = true;
+  }*/
+
+  updateAudioVideo();
 
 #ifdef LED_PIN
   led.update(machines, menu.machineIndexPreselection(), menu.machineIndexSelected());
@@ -104,106 +146,89 @@ void loop(void) {
 
 void updateAudioVideo(void) {
   uint32_t t0 = micros();
-
   bool isMenu = menu.machineIndexIsMenu();
-  if(isMenu) {
+  //emulation_ready=true;
+  //Serial.println("menu");
+  if (isMenu) {
     menu.handle();
-  }
-  else {
+  } else {
     if (menu.startMachine()) {
       currentMachine = machines[menu.machineIndexSelected()];
       audio.start(currentMachine);
       video.flip(currentMachine->videoFlipY(), currentMachine->videoFlipX());
-        
-      // start new machine
       emulation_start();
     }
     currentMachine->prepare_frame();
   }
 
-  if (doReset || menu.attract_gameTimeout()) {  
-    // stop current machine
+  if (doReset || menu.attract_gameTimeout()) {
     emulation_stop();
     video.flipReset(currentMachine->videoFlipY(), currentMachine->videoFlipX());
-
     menu.show_menu();
     doReset = false;
   }
 
+#ifdef VIDEO_BACKEND_VGA32
+  // ── VGA32: renderizar frame completo ──────────────────────
+  tft_start_frame();
+  for (int c = 0; c < 36; c++) {
+    renderRow(c, isMenu);
+    for (int row = 0; row < 8; row++)
+      tft_write_pixels(0, c * 8 + row, frame_buffer + row * 224, 224);
+    // Audio gestionado por audio_task independiente
+    audio.transmit();
+  }
+  
+  tft_end_frame();
+  emulation_notifyGive();
+vTaskDelay(1);
+#else
+  // ── TFT SPI original ──────────────────────────────────────
   bool videoHalfRate = true;
 #ifndef VIDEO_HALF_RATE
   videoHalfRate = currentMachine->useVideoHalfRate() && !isMenu;
 #endif
 
   if (!videoHalfRate) {
-    // render and transmit screen at once as the display running at 80Mhz can update at full 60 hz game frame
-    for(int c = 0; c < 36; c += 6) {
+    for (int c = 0; c < 36; c += 6) {
       for (int i = 0; i < 6; i++) {
         renderRow(c + i, isMenu); video.write(frame_buffer, 224 * 8);
-      }     
-
-      // audio is updated 6 times per 60 Hz frame
+      }
       audio.transmit();
-    } 
- 
-    // one screen at 60 Hz is 16.6ms
-    unsigned long t1 = (micros() - t0) / 1000;  // calculate time in milliseconds
-    if(t1 < 16) 
-      vTaskDelay(16 - t1);
-    else
-      vTaskDelay(1);    // at least 1 ms delay to prevent watchdog timeout
-
-    // physical refresh is 60Hz. So send vblank trigger once a frame
+    }
+    unsigned long t1 = (micros() - t0) / 1000;
+    if (t1 < 16) vTaskDelay(16 - t1);
+    else         vTaskDelay(1);
     emulation_notifyGive();
-  }
-  else {
-    // render and transmit screen in two halfs as the display running at 40Mhz can only update every second 60 hz game frame
-    for(int half = 0; half < 2; half++) {
-      for(int c = 18 * half; c < 18 * (half + 1); c += 3) {
+  } else {
+    for (int half = 0; half < 2; half++) {
+      for (int c = 18 * half; c < 18 * (half + 1); c += 3) {
         renderRow(c + 0, isMenu); video.write(frame_buffer, 224 * 8);
         renderRow(c + 1, isMenu); video.write(frame_buffer, 224 * 8);
         renderRow(c + 2, isMenu); video.write(frame_buffer, 224 * 8);
-
-        // audio is refilled 6 times per screen update. The screen is updated
-        // every second frame. So audio is refilled 12 times per 30 Hz frame.
-        // Audio registers are udated by CPU3 two times per 30hz frame.
         audio.transmit();
-      } 
- 
-      // one screen at 60 Hz is 16.6ms
-      unsigned long t1 = (micros() - t0) / 1000;  // calculate time in milliseconds
-      if(t1 < (half ? 33 : 16))
-        vTaskDelay((half ? 33 : 16) - t1);
-      else if(half)
-        vTaskDelay(1);    // at least 1 ms delay to prevent watchdog timeout
-
-      // physical refresh is 30Hz. So send vblank trigger twice a frame to the emulation. This will make the game run with 60hz speed
+      }
+      unsigned long t1 = (micros() - t0) / 1000;
+      if (t1 < (half ? 33 : 16)) vTaskDelay((half ? 33 : 16) - t1);
+      else if (half)              vTaskDelay(1);
       emulation_notifyGive();
     }
   }
+
+#endif // VIDEO_BACKEND_VGA32
 }
 
-// render one of 36 tile rows (8 x 224 pixel lines)
 void renderRow(short row, bool isMenu) {
-  if(isMenu) {
+  if (isMenu) {
     menu.render_row(row);
-  } 
-  else {
+  } else {
     memset(frame_buffer, 0, 2 * 224 * 8);
     currentMachine->render_row(row);
   }
 }
 
-void onVolumeUpDown(bool up, bool down) {
-  audio.volumeUpDown(up, down);
-}
-
-void onDoAttractReset() {
-  menu.attract_resetTimer();
-}
-
+void onVolumeUpDown(bool up, bool down) { audio.volumeUpDown(up, down); }
+void onDoAttractReset() { menu.attract_resetTimer(); }
 void onDoReset() {
-  if(!menu.machineIndexIsMenu()) {
-    doReset = true;    
-  }
+  if (!menu.machineIndexIsMenu()) doReset = true;
 }
