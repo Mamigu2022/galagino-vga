@@ -1,5 +1,5 @@
 # Galagino ported to platformio - now with 21 games!
-
+# Port TTGO-VGA32 with PS2 KEYBOARD
 This repo is a port of Till Harbaum's awesome [Galaga emulator](https://github.com/harbaum/galagino) ported to platformio.
 This port is NOT by the original author, so please do not bother him with issues.
 
