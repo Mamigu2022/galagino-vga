@@ -20,18 +20,22 @@
 #define LED_WHITE    CRGB::White
 #endif
 
-#define RAMSIZE   (8192 + 1024 + 128)
+#define RAMSIZE     16384 // max usage is Starforce with 15.040
 
 struct sprite_S {
-  unsigned char code, color, flags;
-  short x, y;
+  int x, y;
+  unsigned char code;
+  unsigned char color;
+  unsigned char color_block;
+  unsigned char flags;
+  unsigned char priority;
 
-  //bombjack
-  unsigned char color_block; // Già shiftato di 3 per essere usato come offset
-  char is_32x32;
-  char flip_x;
-  char flip_y;
-};
+  // flags
+  unsigned char is_32x32  : 1; 
+  unsigned char flip_x    : 1;
+  unsigned char flip_y    : 1;
+  unsigned char reserved  : 5;
+}; 
 
 enum {
   MCH_MENU = 0,
@@ -55,7 +59,15 @@ enum {
   MCH_LADYBUG,
   MCH_DKONGJR,
   MCH_MSPACMAN,
-  MCH_TIMEPLT
+  MCH_TIMEPLT,
+  MCH_TUTANKHM,
+  MCH_SPACE,
+  MCH_GALAXIAN,
+  MCH_STARFORCE,
+  MCH_MOONCRESTA,
+  MCH_SCRAMBLE,
+  MCH_SUPERCOBRA,
+  MCH_DKONG3
 };
 
 // one inst at 3Mhz ~ 500k inst/sec = 500000/60 inst per frame
@@ -81,13 +93,15 @@ public:
 
     virtual void start() { }
     virtual void reset() {
-      for(current_cpu = 0; current_cpu < sizeof(cpu) / sizeof(Z80); current_cpu++)
+      for(current_cpu = 0; current_cpu < sizeof(cpu) / sizeof(Z80); current_cpu++) {
         ResetZ80(&cpu[current_cpu]);
+        irq_enable[current_cpu] = 0;
+      }
 
       memset(memory, 0, RAMSIZE);
       memset(soundregs, 0, sizeof(soundregs)); 
 
-      for (int chip = 0; chip < 2; chip++) {
+      for (int chip = 0; chip < 3; chip++) {
         for (int c = 0; c < 4; c++) {
           sn_period[chip][c] = 0;
           sn_volume[chip][c] = 15; // Muto
@@ -115,6 +129,10 @@ public:
     virtual unsigned char rdI8048_xdm(struct i8048_state_S *state, unsigned char addr)  { return 0x00; };
     virtual unsigned char rdI8048_rom(struct i8048_state_S *state, unsigned short addr) { return 0x00; };
 
+    virtual unsigned char m6809_read(m6809_state *s, uint16_t addr) { return 0x00; }
+    virtual void m6809_write(m6809_state *s, uint16_t addr, uint8_t val) { }
+    virtual unsigned char m6809_read_opcode(m6809_state *s, uint16_t addr) { return 0x00; }
+
     virtual void run_frame(void) { };
     virtual void prepare_frame(void) { };
     virtual void render_row(short row) { };
@@ -130,12 +148,13 @@ public:
     unsigned char soundregs[80];
     
     //Mr.Do!
-    int sn_period[2][4] = {{0, 0, 0, 0}, {0, 0, 0, 0}};    // 4 canali per chip (3 tono + 1 rumore)
-    int sn_volume[2][4] = {{0, 0, 0, 0}, {0, 0, 0, 0}};
+    int sn_period[3][4] = {{0, 0, 0, 0}, {0, 0, 0, 0}, {0, 0, 0, 0}};    // 4 canali per chip (3 tono + 1 rumore)
+    int sn_volume[3][4] = {{0, 0, 0, 0}, {0, 0, 0, 0}, {0, 0, 0, 0}};
 
     //Ladybug
-    int sn_min_volume[2][4]; // latched min volume per audio render cycle
-    int sn_hold[2][4];       // hold counter: keep sound active for N render cycles
+    int sn_min_volume[3][4]; // latched min volume per audio render cycle
+    int sn_hold[3][4];       // hold counter: keep sound active for N render cycles
+    
 protected:
     virtual void blit_tile(short row, char col) { }
     virtual void blit_sprite(short row, unsigned char s) { }
