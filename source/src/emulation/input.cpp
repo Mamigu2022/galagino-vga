@@ -1,5 +1,21 @@
 #include "input.h"
-#include "ps2_input.h"
+
+// PS/2 solo en entornos sin BT
+#ifndef BT_GAMEPAD_INPUT
+  #ifndef BT_GAMEPAD_INPUT_BLUEPAD
+    #include "ps2_input.h"
+  #endif
+#endif
+
+#ifdef BT_GAMEPAD_INPUT
+  #include "ble_gamepad.h"
+#endif
+
+#ifdef BT_GAMEPAD_INPUT_BLUEPAD
+  extern "C" unsigned char bt_input_get_state(void);
+  extern "C" void          bt_input_setup(void);
+#endif
+
 void Input::init(char SingleMachine) {
   singleMachine = SingleMachine;
   virtual_coin_state = 0;
@@ -7,16 +23,20 @@ void Input::init(char SingleMachine) {
   mcp.setup();
 #elif defined(NUNCHUCK_INPUT)
   nunchuck.setup();
+#elif defined(BT_GAMEPAD_INPUT_BLUEPAD)
+  bt_input_setup();
+#elif defined(BT_GAMEPAD_INPUT)
+  ble_gamepad_init();
 #else
   pinMode(BTN_START_PIN, INPUT_PULLUP);
   #ifdef BTN_COIN_PIN
     pinMode(BTN_COIN_PIN, INPUT_PULLUP);
   #endif
-  pinMode(BTN_LEFT_PIN, INPUT_PULLUP);
+  pinMode(BTN_LEFT_PIN,  INPUT_PULLUP);
   pinMode(BTN_RIGHT_PIN, INPUT_PULLUP);
-  pinMode(BTN_DOWN_PIN, INPUT_PULLUP);
-  pinMode(BTN_UP_PIN, INPUT_PULLUP);
-  pinMode(BTN_FIRE_PIN, INPUT_PULLUP);
+  pinMode(BTN_DOWN_PIN,  INPUT_PULLUP);
+  pinMode(BTN_UP_PIN,    INPUT_PULLUP);
+  pinMode(BTN_FIRE_PIN,  INPUT_PULLUP);
 #endif
 
   char inputs = buttons_get();
@@ -33,138 +53,130 @@ char Input::demoSoundsOff() {
 
 unsigned char Input::buttons_get(void) {
   unsigned char input_states = 0;
+
 #ifdef MCP23017_INPUT
   input_states = mcp.getInput();
 #elif defined(NUNCHUCK_INPUT)
-  input_states = nunchuck.getInput();  
+  input_states = nunchuck.getInput();
+#elif defined(BT_GAMEPAD_INPUT_BLUEPAD)
+  input_states = bt_input_get_state();
+#elif defined(BT_GAMEPAD_INPUT)
+
+  input_states = ble_gamepad_buttons();
+  if(input_states==BUTTON_COIN) virtual_coin_state = 1;
 #else
   #ifdef BTN_COIN_PIN
-    //input_states = (!digitalRead(BTN_COIN_PIN)) ? BUTTON_EXTRA : 0;
-    input_states = (ps2_key_coin() ?   BUTTON_EXTRA : 0);
-      
+    input_states = (ps2_key_coin() ? BUTTON_EXTRA : 0);
   #else
     input_states = (!digitalRead(BTN_START_PIN)) ? BUTTON_EXTRA : 0;
   #endif
   input_states |=
   #ifdef KEYBOARD
-    (ps2_key_left() ?  BUTTON_LEFT : 0) |
-      (ps2_key_right() ?  BUTTON_RIGHT : 0) |
-      (ps2_key_up() ?  BUTTON_UP : 0) |
-      (ps2_key_down() ?  BUTTON_DOWN : 0) |
-      (ps2_key_fire() ?  BUTTON_FIRE : 0);
-      ps2_input_update();
- #else     
-    (digitalRead(BTN_LEFT_PIN) ? 0 : BUTTON_LEFT) |
+    (ps2_key_left()  ? BUTTON_LEFT  : 0) |
+    (ps2_key_right() ? BUTTON_RIGHT : 0) |
+    (ps2_key_up()    ? BUTTON_UP    : 0) |
+    (ps2_key_down()  ? BUTTON_DOWN  : 0) |
+    (ps2_key_fire()  ? BUTTON_FIRE  : 0);
+    ps2_input_update();
+  #else
+    (digitalRead(BTN_LEFT_PIN)  ? 0 : BUTTON_LEFT)  |
     (digitalRead(BTN_RIGHT_PIN) ? 0 : BUTTON_RIGHT) |
-    (digitalRead(BTN_UP_PIN) ? 0 : BUTTON_UP) |
-    (digitalRead(BTN_DOWN_PIN) ? 0 : BUTTON_DOWN) |
-    (digitalRead(BTN_FIRE_PIN) ? 0 : BUTTON_FIRE);
+    (digitalRead(BTN_UP_PIN)    ? 0 : BUTTON_UP)    |
+    (digitalRead(BTN_DOWN_PIN)  ? 0 : BUTTON_DOWN)  |
+    (digitalRead(BTN_FIRE_PIN)  ? 0 : BUTTON_FIRE);
   #endif
 #endif
-  // Capture physical EXTRA button state for the Virtual Coin state machine
-  bool extraPhysicalPressed = (input_states & BUTTON_EXTRA);
 
+  bool extraPhysicalPressed = (input_states & BUTTON_EXTRA);
   unsigned char startAndCoinState = 0;
 
-  // Virtual Coin State Machine (The "Extra" button logic)
-  switch(virtual_coin_state)  {
-    case 0:  // idle state
+  switch(virtual_coin_state) {
+    case 0:
       if(extraPhysicalPressed) {
-        virtual_coin_state = 1;   // virtual coin pressed
+        virtual_coin_state = 1;
         virtual_coin_timer = millis();
       }
       break;
-    case 1:  // start was just pressed
+    case 1:
       if(millis() - virtual_coin_timer > 100) {
-        virtual_coin_state = 2;   // virtual coin released
-        virtual_coin_timer = millis();        
+        virtual_coin_state = 2;
+        virtual_coin_timer = millis();
       }
       break;
-    case 2:  // virtual coin was released
+    case 2:
       if(millis() - virtual_coin_timer > 500) {
-        virtual_coin_state = 3;   // pause between virtual coin an start ended
-        virtual_coin_timer = millis();        
+        virtual_coin_state = 3;
+        virtual_coin_timer = millis();
       }
       break;
-    case 3:  // pause ended
+    case 3:
       if(millis() - virtual_coin_timer > 100) {
-        virtual_coin_state = 4;   // virtual start ended
-        virtual_coin_timer = millis();        
+        virtual_coin_state = 4;
+        virtual_coin_timer = millis();
       }
       break;
-    case 4:  // virtual start has ended
+    case 4:
       if(!extraPhysicalPressed)
-        virtual_coin_state = 0;   // button has been released, return to idle
+        virtual_coin_state = 0;
       break;
   }
-  
-  startAndCoinState = ((virtual_coin_state != 1) ? 0 : BUTTON_COIN) | 
+
+  startAndCoinState = ((virtual_coin_state != 1) ? 0 : BUTTON_COIN) |
                       (((virtual_coin_state != 3) && (virtual_coin_state != 4)) ? 0 : BUTTON_START);
 
-  // If MCP23017 is used, allow hardware start/coin pins as well
 #ifdef MCP23017_INPUT
   startAndCoinState |= (input_states & (BUTTON_START | BUTTON_COIN));
-#elif defined(BTN_COIN_PIN)
-  // standard pins
-  
-  startAndCoinState |= 
-#ifdef KEYBOARD
-    (ps2_key_start() ?   BUTTON_START : 0) |
-    (ps2_key_coin() ?  BUTTON_COIN : 0);
-#else    
-    (digitalRead(BTN_START_PIN) ? 0 : BUTTON_START) |
-    (digitalRead(BTN_COIN_PIN) ? 0 : BUTTON_COIN);
-#endif   
+#elif !defined(BT_GAMEPAD_INPUT) && !defined(BT_GAMEPAD_INPUT_BLUEPAD) && \
+      !defined(NUNCHUCK_INPUT) && defined(BTN_COIN_PIN)
+  startAndCoinState |=
+  #ifdef KEYBOARD
+    (ps2_key_start() ? BUTTON_START : 0) |
+    (ps2_key_coin()  ? BUTTON_COIN  : 0) |
+  #endif
+    (digitalRead(BTN_START_PIN) ? BUTTON_START : 0) |
+    (digitalRead(BTN_COIN_PIN)  ? BUTTON_COIN  : 0);
 #endif
 
-  // Clean up input_states for return, but KEEP BUTTON_EXTRA for reset check below
   input_states &= ~(BUTTON_START | BUTTON_COIN);
 
-  // volume control
   if (extraPhysicalPressed && _volume_callback) {
     _volume_callback(input_states & BUTTON_UP, input_states & BUTTON_DOWN);
-    
     if ((input_states & BUTTON_UP) | (input_states & BUTTON_DOWN))
       reset_timer = 0;
   }
 
   if (!singleMachine) {
-    bool buttonExtraRisingEdge = extraPhysicalPressed && !(input_states_last & BUTTON_EXTRA); 
-    bool buttonUpRisingEdge = (input_states & BUTTON_UP) && !(input_states_last & BUTTON_UP); 
-    bool buttonDownRisingEdge = (input_states & BUTTON_DOWN) && !(input_states_last & BUTTON_DOWN); 
+    bool buttonExtraRisingEdge = extraPhysicalPressed && !(input_states_last & BUTTON_EXTRA);
+    bool buttonUpRisingEdge    = (input_states & BUTTON_UP)   && !(input_states_last & BUTTON_UP);
+    bool buttonDownRisingEdge  = (input_states & BUTTON_DOWN) && !(input_states_last & BUTTON_DOWN);
 
-    if (buttonUpRisingEdge | buttonDownRisingEdge | buttonExtraRisingEdge ) {
+    if (buttonUpRisingEdge | buttonDownRisingEdge | buttonExtraRisingEdge) {
       if (_doAttractReset_callback)
-        _doAttractReset_callback();  
+        _doAttractReset_callback();
     }
 
     if(extraPhysicalPressed) {
       if(!reset_timer)
         reset_timer = millis();
-    
       if(millis() - reset_timer > 3000) {
         reset_timer = millis();
         if (_doReset_callback)
           _doReset_callback();
       }
-    } 
-    else
+    } else {
       reset_timer = 0;
+    }
 
-    // Track state for rising edge detection
     input_states_last = (input_states & ~BUTTON_EXTRA) | (extraPhysicalPressed ? BUTTON_EXTRA : 0);
   }
 
   if (firePressedAtStart && input_states & BUTTON_FIRE) {
     printf("Wait for release fire button...\n");
     input_states = 0;
-  }
-  else
-  {
+  } else {
     firePressedAtStart = false;
   }
 
-  // Return merged state without physical EXTRA button (handled internally)
   return (input_states & ~BUTTON_EXTRA) | startAndCoinState;
 }
 

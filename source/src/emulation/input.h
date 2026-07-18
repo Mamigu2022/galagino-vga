@@ -1,5 +1,5 @@
-#ifndef INPUT_H
-#define INPUT_H
+#ifndef GALAGINO_INPUT_H
+#define GALAGINO_INPUT_H
 
 #include <Arduino.h>
 #include "../config.h"

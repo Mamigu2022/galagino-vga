@@ -11,7 +11,7 @@
 
 // Punteros globales
 extern fabgl::VGAController* VGACtrl;
-extern fabgl::Canvas*        VGACanvas;
+//extern fabgl::Canvas*        VGACanvas;
 
 #ifndef GAME_WIDTH
   #define GAME_WIDTH  224
@@ -30,7 +30,7 @@ void tft_init(void);
 void tft_start_frame(void);
 void tft_write_pixels(int x_start, int y_game, const uint16_t* pixels, int count);
 void tft_end_frame(void);
-void tft_fill_rect(int x, int y, int w, int h, uint16_t color565);
+//void tft_fill_rect(int x, int y, int w, int h, uint16_t color565);
 
 static inline uint16_t rgb_to_565(uint8_t r, uint8_t g, uint8_t b) {
   return ((uint16_t)(r & 0xF8) << 8) | ((uint16_t)(g & 0xFC) << 3) | (b >> 3);
