@@ -6,7 +6,7 @@
 
 #include "config.h"
 
-#ifdef VIDEO_BACKEND_VGA32
+#ifdef KEYBOARD
 
 #include <FabGL.h>
 

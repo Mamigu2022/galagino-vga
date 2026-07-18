@@ -2,7 +2,7 @@
 
 #include "config.h"
 
-#ifdef VIDEO_BACKEND_VGA32
+#ifdef KEYBOARD
 
 #include "ps2_input.h"
 #include <FabGL.h>
