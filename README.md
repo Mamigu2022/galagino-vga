@@ -47,6 +47,21 @@ Running Galagino's CPU emulation, FabGL's VGA generation, and the massive ESP32 
 ### Prerequisites
 * **PlatformIO** (VS Code)
 * **Python 3.x** installed on your host system.
+### 🔌 Esquema de Pines / Hardware Pinout (ESP32-WROVER)
+
+Si estás construyendo tu propia placa casera, el mapeo de pines para la salida VGA, las señales de sincronización y el audio se estructura de la siguiente manera:
+
+| Componente | Pin ESP32 (WROVER) | Detalles del Circuito / Circuit Details |
+| :--- | :--- | :--- |
+| **Red (Rojo)** | GPIO 22 | Resistencia de 470 Ω al pin 1 del conector VGA |
+| **Green (Verde)** | GPIO 19 | Resistencia de 470 Ω al pin 2 del conector VGA |
+| **Blue (Azul)** | GPIO 5 | Resistencia de 470 Ω al pin 3 del conector VGA |
+| **H-Sync** | GPIO 23 | Directo al pin 13 del conector VGA |
+| **V-Sync** | GPIO 18 | Directo al pin 14 del conector VGA |
+| **Audio (DAC)** | **GPIO 26** | Salida de audio analógica (A través de condensador de 10µF) |
+| **GND** | GND | Pines de tierra (VGA 5, 6, 7, 8, 10 y masa del jack de audio) |
+
+*Nota / Note:* El circuito de audio utiliza el DAC interno de 8 bits del ESP32. Se recomienda colocar un condensador electrolítico de 10µF en serie con el GPIO 26 para eliminar la componente de corriente continua (DC offset) antes de conectarlo a un amplificador o altavoz.
 
 ### Setup and Compilation
 
