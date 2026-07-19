@@ -1,5 +1,66 @@
 # Galagino ported to platformio - now with 21 games!
 # Port TTGO-VGA32 with PS2 KEYBOARD
+# ESP32 WROVER Galagino Port (VGA + Bluetooth)
+
+[Castellano](#versión-en-español) | [English](#english-version)
+
+---
+
+## Versión en Español
+
+Este proyecto es un port personalizado del emulador **Galagino** (Pac-Man, Galaga, Donkey Kong) diseñado para funcionar en pantallas **VGA** utilizando la librería **FabGL** y controlado mediante un **mando Bluetooth**.
+
+El hardware utiliza un módulo **ESP32-WROVER** configurado en una placa personalizada que emula el comportamiento de una TTGO-VGA32, utilizando salidas VGA con su respectiva red de resistencias DAC.
+
+### ⚠️ El Desafío de la Memoria IRAM0
+Combinar el emulador de CPU de Galagino, el driver de video VGA de FabGL y el stack de Bluetooth nativo del ESP32 satura por completo la memoria **IRAM0**. Para solucionar esto, este repositorio incluye un script en Python que parchea FabGL automáticamente reduciendo su consumo de IRAM0 antes de compilar.
+
+### Requisitos del Sistema
+* **PlatformIO** (VS Code)
+* **Python 3.x** instalado en tu sistema operativo.
+
+### Instalación y Compilación
+
+1. **Clonar el repositorio:**
+   ```bash
+   git clone https://github.com
+   cd TU_REPOSITORIO
+   ```
+2. **Preparar las ROMs:** Coloca tus archivos ROM de arcade compatibles en la carpeta correspondiente según la estructura original de Galagino.
+3. **Compilación Automatizada:**
+   Gracias a las directivas `extra_scripts` integradas en el archivo `platformio.ini`, **solo necesitas compilar el proyecto una única vez**. 
+   * Abre el proyecto en VS Code con PlatformIO.
+   * Presiona **Build** (icono de la marca de verificación).
+   * El script de Python buscará la ruta local de la librería FabGL en `.pio/libdeps/`, aplicará las optimizaciones de memoria necesarias y compilará todo el binario en un solo paso.
+
+---
+
+## English Version
+
+This project is a custom port of the **Galagino** arcade emulator (Pac-Man, Galaga, Donkey Kong) modified to output native **VGA video** via the **FabGL** library and controlled wirelessly using a **Bluetooth gamepad**.
+
+The hardware features an **ESP32-WROVER** module on a custom DIY board that mirrors the functionality of a TTGO-VGA32, implementing the required resistor ladder DAC network for VGA signals.
+
+### ⚠️ The IRAM0 Memory Challenge
+Running Galagino's CPU emulation, FabGL's VGA generation, and the massive ESP32 Bluetooth stack simultaneously completely exhausts the **IRAM0** memory layout. To overcome this limitation, this repository includes an automated Python script that patches the FabGL codebase on-the-fly to free up critical IRAM0 space before compilation.
+
+### Prerequisites
+* **PlatformIO** (VS Code)
+* **Python 3.x** installed on your host system.
+
+### Setup and Compilation
+
+1. **Clone the repository:**
+   ```bash
+   git clone https://github.com
+   cd YOUR_REPOSITORY
+   ```
+2. **Prepare Arcade ROMs:** Place your compatible arcade ROM assets into the designated directory structure required by the base Galagino architecture.
+3. **One-Click Compilation:**
+   By leveraging PlatformIO's native `extra_scripts` feature inside `platformio.ini`, **you only need to trigger the build cycle once**.
+   * Open the workspace inside VS Code with PlatformIO.
+   * Click **Build** (the checkmark icon).
+   * The execution hook automatically locates the managed FabGL directory under `.pio/libdeps/`, applies the memory mitigation patches, and compiles the finalized firmware image seamlessly.
 This repo is a port of Till Harbaum's awesome [Galaga emulator](https://github.com/harbaum/galagino) ported to platformio.
 This port is NOT by the original author, so please do not bother him with issues.
 
