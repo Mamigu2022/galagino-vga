@@ -42,16 +42,18 @@ void Audio::start(machineBase *machineBase) {
   currentMachine = machineBase;
   machineType = currentMachine->machineType();
 
-  AY = 0;
+ AY = 0;
   if (machineType == MCH_FROGGER)         { AY = 1; AY_INC = 9; AY_VOL = 11; }
   else if (machineType == MCH_1942)       { AY = 2; AY_INC = 8; AY_VOL = 5;  }
   else if (machineType == MCH_ANTEATER)   { AY = 2; AY_INC = 9; AY_VOL = 5;  }
   else if (machineType == MCH_BOMBJACK)   { AY = 3; AY_INC = 8; AY_VOL = 4;  }
+  else if (machineType == MCH_PBACTION)   { AY = 3; AY_INC = 8; AY_VOL = 4;  }
   else if (machineType == MCH_GYRUSS)     { AY = 5; AY_INC = 9; AY_VOL = 3;  }
   else if (machineType == MCH_TIMEPLT)    { AY = 2; AY_INC = 9; AY_VOL = 5;  }
   else if (machineType == MCH_TUTANKHM)   { AY = 2; AY_INC = 7; AY_VOL = 7;  }
   else if (machineType == MCH_SCRAMBLE)   { AY = 2; AY_INC = 8; AY_VOL = 7;  }
   else if (machineType == MCH_SUPERCOBRA) { AY = 2; AY_INC = 8; AY_VOL = 7;  }
+
 
   for(char ay = 0; ay < NUM_AY_CHIPS; ay++) {
     for (int c = 0; c < 4; c++) {
@@ -237,6 +239,12 @@ void Audio::ay_render_buffer(void) {
           }
         }
       }
+    }
+    if (machineType == MCH_GYRUSS) {
+      static int dc = 0;
+      int s = 10;  // gia' scalato (volume in gyruss.h)
+      dc += (s - dc) >> 7;                         // media lenta = livello DC
+      value += s - dc;                             // componente AC
     }
     valueToBuffer(i, value);
   }

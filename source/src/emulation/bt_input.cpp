@@ -6,9 +6,7 @@
 #include <Arduino.h>
 #include "bt_input.h"
 #ifdef BT_GAMEPAD_INPUT_BLUEPAD
-#include "C:/Users/migue/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32/include/bluepad32_arduino/include/Bluepad32.h"
-
-
+#include "Bluepad32.h"
 // ── Mascaras Galagino ─────────────────────────────────────────
 #define G_BUTTON_LEFT  0x01
 #define G_BUTTON_RIGHT 0x02
@@ -80,7 +78,7 @@ static void btTask(void* p) {
         }
 
         // BluePad32 necesita ser llamado frecuentemente
-        vTaskDelay(pdMS_TO_TICKS(1));
+        vTaskDelay(pdMS_TO_TICKS(16));
     }
 }
 
